@@ -1,14 +1,16 @@
 package com.ayoubom.kafka
 
 import org.apache.kafka.common.serialization._
-import org.apache.kafka.streams.kstream._
 import org.apache.kafka.streams._
+import org.apache.kafka.streams.kstream._
+import org.apache.kafka.streams.state.WindowStore
 import org.apache.kafka.streams.state.internals.RocksDbWindowBytesStoreSupplier
 import org.scalatest.funsuite.AnyFunSuite
 
 import java.time.{Duration, Instant}
+import java.util.Properties
 
-class Test extends AnyFunSuite {
+class TopologiesTest extends AnyFunSuite {
 
   test("test driver") {
     val testDriver: TopologyTestDriver = new TopologyTestDriver(topology)
@@ -43,6 +45,18 @@ class Test extends AnyFunSuite {
     sd.inputTopic.pipeInput("hmida", 15, baseTime)
     sd.inputTopic.pipeInput("lambda", 50, baseTime.plusSeconds(1))
     sd.inputTopic.pipeInput("hmida", 30, baseTime.plusSeconds(1))
+
+    val store: WindowStore[String, Integer] = sd.driver.getWindowStore("window_store")
+
+    val iterator = store.fetchAll(baseTime.minusSeconds(1), baseTime.plusSeconds(1))
+
+    println(s"baseTime = $baseTime")
+    while (iterator.hasNext) {
+      val valueAndTime = iterator.next()
+      println(
+        s"Window=[${Instant.ofEpochMilli(valueAndTime.key.window().start)}, ${Instant.ofEpochMilli(valueAndTime.key.window().end)}]" +
+        s" - key=${valueAndTime.key.key} - value=${valueAndTime.value}")
+    }
 
     readOutputTopic(sd.outputTopic)
   }
@@ -88,7 +102,11 @@ class Test extends AnyFunSuite {
 
 
   private def setUpDriver(topology: Topology, inputTopicName: String, outputTopicName: String) = {
-    val testDriver: TopologyTestDriver = new TopologyTestDriver(topology)
+    val props = new Properties()
+    props.setProperty(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kafka-streams/")
+    props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(topology, props)
     val inputTopic = testDriver.createInputTopic(inputTopicName, new StringSerializer, new IntegerSerializer)
     val outputTopic = testDriver.createOutputTopic(outputTopicName, new StringDeserializer, new IntegerDeserializer)
 
