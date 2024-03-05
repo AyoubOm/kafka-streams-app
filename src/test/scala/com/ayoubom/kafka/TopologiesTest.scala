@@ -66,14 +66,15 @@ class TopologiesTest extends AnyFunSuite {
   test("foreign key join") {
 
     val testDriver: TopologyTestDriver = new TopologyTestDriver(foreignKeyJoinTopology)
-    val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new StringSerializer)
+    val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new JsonSerializer[ProductValue])
     val inputTopic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
     val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
 
-    inputTopic1.pipeInput("3 bands", "adidas")
+    inputTopic1.pipeInput("3 bands", ProductValue("adidas", "3 bands"))
     inputTopic2.pipeInput("adidas", 3)
     inputTopic2.pipeInput("puma", 4)
-    inputTopic1.pipeInput(new TestRecord[String, String]("3 bands", "puma"))
+   // inputTopic1.pipeInput(new TestRecord[String, ProductValue]("3 bands", ProductValue("puma", "3 bands")))
+    inputTopic1.pipeInput(new TestRecord[String, ProductValue]("3 bands", ProductValue(null, "3 bands")))
 
     readOutputTopic(outputTopic)
   }
@@ -121,11 +122,11 @@ class TopologiesTest extends AnyFunSuite {
     val builder = new StreamsBuilder
 
     builder
-      .table[String, String]("product", Consumed.`with`(Serdes.String(), Serdes.String()))
+      .table[String, ProductValue]("product", Consumed.`with`(Serdes.String(), new JsonSerde[ProductValue]))
       .leftJoin[Integer, String, Integer](
         builder.table[String, Integer]("merchant", Consumed.`with`(Serdes.String(), Serdes.Integer())),
-        productMerchantValue => productMerchantValue,
-        (productMerchant: String, merchantRank: Integer) => merchantRank
+        product => product.merchant,
+        (_: ProductValue, merchantRank: Integer) => merchantRank
       )
       .toStream
       .to("output-join", Produced.`with`(Serdes.String(), Serdes.Integer()))
@@ -152,6 +153,8 @@ class TopologiesTest extends AnyFunSuite {
                                   )
 
 
+
+
   private def readOutputTopic(topic: TestOutputTopic[String, Integer]): Unit = {
     while (!topic.isEmpty) {
       println(topic.readKeyValue())
@@ -159,3 +162,5 @@ class TopologiesTest extends AnyFunSuite {
   }
 
 }
+
+case class ProductValue(merchant: String, name: String)
