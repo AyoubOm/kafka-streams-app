@@ -5,6 +5,7 @@ import org.apache.kafka.streams._
 import org.apache.kafka.streams.kstream._
 import org.apache.kafka.streams.state.WindowStore
 import org.apache.kafka.streams.state.internals.RocksDbWindowBytesStoreSupplier
+import org.apache.kafka.streams.test.TestRecord
 import org.scalatest.funsuite.AnyFunSuite
 
 import java.time.{Duration, Instant}
@@ -61,6 +62,22 @@ class TopologiesTest extends AnyFunSuite {
     readOutputTopic(sd.outputTopic)
   }
 
+
+  test("foreign key join") {
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(foreignKeyJoinTopology)
+    val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new StringSerializer)
+    val inputTopic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
+    val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
+
+    inputTopic1.pipeInput("3 bands", "adidas")
+    inputTopic2.pipeInput("adidas", 3)
+    inputTopic2.pipeInput("puma", 4)
+    inputTopic1.pipeInput(new TestRecord[String, String]("3 bands", "puma"))
+
+    readOutputTopic(outputTopic)
+  }
+
   private def windowTopology: Topology = {
     val builder = new StreamsBuilder
 
@@ -100,6 +117,21 @@ class TopologiesTest extends AnyFunSuite {
     builder.build()
   }
 
+  private def foreignKeyJoinTopology: Topology = {
+    val builder = new StreamsBuilder
+
+    builder
+      .table[String, String]("product", Consumed.`with`(Serdes.String(), Serdes.String()))
+      .leftJoin[Integer, String, Integer](
+        builder.table[String, Integer]("merchant", Consumed.`with`(Serdes.String(), Serdes.Integer())),
+        productMerchantValue => productMerchantValue,
+        (productMerchant: String, merchantRank: Integer) => merchantRank
+      )
+      .toStream
+      .to("output-join", Produced.`with`(Serdes.String(), Serdes.Integer()))
+
+    builder.build()
+  }
 
   private def setUpDriver(topology: Topology, inputTopicName: String, outputTopicName: String) = {
     val props = new Properties()
