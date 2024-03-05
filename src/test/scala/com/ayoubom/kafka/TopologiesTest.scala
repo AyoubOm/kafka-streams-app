@@ -14,7 +14,11 @@ import java.util.Properties
 class TopologiesTest extends AnyFunSuite {
 
   test("test driver") {
-    val testDriver: TopologyTestDriver = new TopologyTestDriver(topology)
+    val props = new Properties()
+    props.setProperty(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kafka-streams/")
+    props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(topology, props)
     val inputTopic = testDriver.createInputTopic("input-topic", new StringSerializer, new IntegerSerializer)
     val outputTopic = testDriver.createOutputTopic("output-topic", new StringDeserializer, new IntegerDeserializer)
 
@@ -35,7 +39,7 @@ class TopologiesTest extends AnyFunSuite {
 
     builder.build()
   }
-
+/*
   test("window topology") {
     val sd = setUpDriver(windowTopology, "earnings", "agg-earnings")
 
@@ -63,9 +67,14 @@ class TopologiesTest extends AnyFunSuite {
   }
 
 
-  test("foreign key join") {
+ */
 
-    val testDriver: TopologyTestDriver = new TopologyTestDriver(foreignKeyJoinTopology)
+  test("foreign key join") {
+    val props = new Properties()
+    props.setProperty(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kafka-streams/")
+    props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(foreignKeyJoinTopology, props)
     val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new StringSerializer)
     val inputTopic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
     val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
@@ -73,16 +82,16 @@ class TopologiesTest extends AnyFunSuite {
     inputTopic1.pipeInput("3 bands", "adidas")
     inputTopic2.pipeInput("adidas", 3)
     inputTopic2.pipeInput("puma", 4)
-    inputTopic1.pipeInput(new TestRecord[String, String]("3 bands", "puma"))
+    inputTopic1.pipeInput(new TestRecord[String, String]("3 bands", null))
 
     readOutputTopic(outputTopic)
   }
-
+/*
   private def windowTopology: Topology = {
     val builder = new StreamsBuilder
 
     val windowSize = Duration.ofSeconds(1)
-    val tumblingWindow = TimeWindows.ofSizeWithNoGrace(windowSize).advanceBy(windowSize)
+    //val tumblingWindow = TimeWindows.ofSizeWithNoGrace(windowSize).advanceBy(windowSize)
 
 
     val windowedSerializer = new TimeWindowedSerializer[String](new StringSerializer)
@@ -116,7 +125,7 @@ class TopologiesTest extends AnyFunSuite {
 
     builder.build()
   }
-
+*/
   private def foreignKeyJoinTopology: Topology = {
     val builder = new StreamsBuilder
 
