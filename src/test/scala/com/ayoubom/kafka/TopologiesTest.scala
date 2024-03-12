@@ -1,5 +1,6 @@
 package com.ayoubom.kafka
 
+import myapps.serdes.{JsonSerializer, JsonSerde}
 import org.apache.kafka.common.serialization._
 import org.apache.kafka.streams._
 import org.apache.kafka.streams.kstream._
@@ -56,28 +57,12 @@ class TopologiesTest extends AnyFunSuite {
       val valueAndTime = iterator.next()
       println(
         s"Window=[${Instant.ofEpochMilli(valueAndTime.key.window().start)}, ${Instant.ofEpochMilli(valueAndTime.key.window().end)}]" +
-        s" - key=${valueAndTime.key.key} - value=${valueAndTime.value}")
+          s" - key=${valueAndTime.key.key} - value=${valueAndTime.value}")
     }
 
     readOutputTopic(sd.outputTopic)
   }
 
-
-  test("foreign key join") {
-
-    val testDriver: TopologyTestDriver = new TopologyTestDriver(foreignKeyJoinTopology)
-    val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new JsonSerializer[ProductValue])
-    val inputTopic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
-    val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
-
-    inputTopic1.pipeInput("3 bands", ProductValue("adidas", "3 bands"))
-    inputTopic2.pipeInput("adidas", 3)
-    inputTopic2.pipeInput("puma", 4)
-   // inputTopic1.pipeInput(new TestRecord[String, ProductValue]("3 bands", ProductValue("puma", "3 bands")))
-    inputTopic1.pipeInput(new TestRecord[String, ProductValue]("3 bands", ProductValue(null, "3 bands")))
-
-    readOutputTopic(outputTopic)
-  }
 
   private def windowTopology: Topology = {
     val builder = new StreamsBuilder
@@ -118,16 +103,28 @@ class TopologiesTest extends AnyFunSuite {
     builder.build()
   }
 
-  private def foreignKeyJoinTopology: Topology = {
+  private def foreignKeyJoinTopology(inner: Boolean = false): Topology = {
     val builder = new StreamsBuilder
 
-    builder
+
+    val productTable = builder
       .table[String, ProductValue]("product", Consumed.`with`(Serdes.String(), new JsonSerde[ProductValue]))
-      .leftJoin[Integer, String, Integer](
-        builder.table[String, Integer]("merchant", Consumed.`with`(Serdes.String(), Serdes.Integer())),
-        product => product.merchant,
-        (_: ProductValue, merchantRank: Integer) => merchantRank
-      )
+
+    if (!inner) {
+      productTable
+        .leftJoin[Integer, String, Integer](
+          builder.table[String, Integer]("merchant", Consumed.`with`(Serdes.String(), Serdes.Integer())),
+          product => product.merchant,
+          (_: ProductValue, merchantRank: Integer) => merchantRank
+        )
+    } else {
+      productTable
+        .join[Integer, String, Integer](
+          builder.table[String, Integer]("merchant", Consumed.`with`(Serdes.String(), Serdes.Integer())),
+          product => product.merchant,
+          (_: ProductValue, merchantRank: Integer) => merchantRank
+        )
+    }
       .toStream
       .to("output-join", Produced.`with`(Serdes.String(), Serdes.Integer()))
 
@@ -151,8 +148,6 @@ class TopologiesTest extends AnyFunSuite {
                                     inputTopic: TestInputTopic[String, Integer],
                                     outputTopic: TestOutputTopic[String, Integer]
                                   )
-
-
 
 
   private def readOutputTopic(topic: TestOutputTopic[String, Integer]): Unit = {
