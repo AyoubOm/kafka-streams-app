@@ -63,7 +63,8 @@ class TopologiesTest extends AnyFunSuite {
     readOutputTopic(sd.outputTopic)
   }
 
-  test("foreign key join") {
+  test("foreign key join: 1 st bug") {
+    // bug when changing the foreign key to either a null or a non-null value (a wrong event with a null foreign key is output in the join)
 
     val testDriver: TopologyTestDriver = new TopologyTestDriver(foreignKeyJoinTopology())
     val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new JsonSerializer[ProductValue])
@@ -74,6 +75,23 @@ class TopologiesTest extends AnyFunSuite {
     inputTopic2.pipeInput("adidas", 3)
     inputTopic2.pipeInput("puma", 4)
     inputTopic1.pipeInput(new TestRecord[String, ProductValue]("3 bands", ProductValue(null, "3 bands")))
+
+    readOutputTopic(outputTopic)
+  }
+
+  test("foreign key join: 2nd bug") {
+    // bug when deleting a left entry (i.e. existing primary key in the join result), we output twice the deletion
+
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(foreignKeyJoinTopology())
+    val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new JsonSerializer[ProductValue])
+    val inputTopic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
+    val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
+
+    inputTopic1.pipeInput("3 bands", ProductValue("adidas", "3 bands"))
+    inputTopic2.pipeInput("adidas", 3)
+    inputTopic2.pipeInput("puma", 4)
+    inputTopic1.pipeInput(new TestRecord[String, ProductValue]("3 bands", null))
 
     readOutputTopic(outputTopic)
   }
