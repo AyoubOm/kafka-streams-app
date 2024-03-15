@@ -96,31 +96,36 @@ class TopologiesTest extends AnyFunSuite {
     readOutputTopic(outputTopic)
   }
 
-  test("session window") {
-    val baseTime = Instant.now().minusSeconds(10)
+  test("foreign key join: inner incoherent behavior") {
+    // 4. Incoherence of behavior in INNER Join: changing FK to a non-existent value in right table VS changing FK to a null value
+    // In first case we return an event with null right side (inorder to unset the join entry), in the second case we return nothing
 
-    val sessionWindowSerializer = new SessionWindowedSerializer[String](new StringSerializer)
-    val sessionWindowDeserializer = new SessionWindowedDeserializer[String](new StringDeserializer)
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(foreignKeyJoinTopology(true))
+    val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new JsonSerializer[ProductValue])
+    val inputTopic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
+    val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
 
-    val windowedSerde = Serdes.serdeFrom(sessionWindowSerializer, sessionWindowDeserializer)
-
-
-    val testDriver: TopologyTestDriver = new TopologyTestDriver(sessionTopology)
-    val inputTopic = testDriver.createInputTopic("input-topic", new StringSerializer, new IntegerSerializer)
-    val outputTopic = testDriver.createOutputTopic("output-topic", windowedSerde.deserializer(), new LongDeserializer)
-
-    inputTopic.pipeInput("foo", 3, baseTime)
-    inputTopic.pipeInput("bar", 1, baseTime)
-    inputTopic.pipeInput("foo", 2, baseTime.plusSeconds(1))
-    inputTopic.pipeInput("bar", 1, baseTime.plusSeconds(1))
-    inputTopic.pipeInput("bar", 1, baseTime.plusSeconds(2))
-    inputTopic.pipeInput("foo", 3, baseTime.plusSeconds(4))
-    inputTopic.pipeInput("bar", 1, baseTime.plusSeconds(4))
-    inputTopic.pipeInput("bar", 1, baseTime.plusSeconds(5))
+    inputTopic1.pipeInput("macbook m2", ProductValue("apple", ""))
+    inputTopic2.pipeInput("apple", 3)
+    inputTopic1.pipeInput("macbook m2", ProductValue("non_existent", ""))
+    // vs // inputTopic1.pipeInput("macbook m2", ProductValue(null))
 
     readOutputTopic(outputTopic)
   }
 
+  test("foreign key join: inner") {
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(foreignKeyJoinTopology(true))
+    val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new JsonSerializer[ProductValue])
+    val inputTopic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
+    val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
+
+    inputTopic1.pipeInput("macbook m2", ProductValue("apple", ""))
+    inputTopic2.pipeInput("apple", 3)
+    inputTopic1.pipeInput("macbook m2", null)
+
+    readOutputTopic(outputTopic)
+  }
 
   private def windowTopology: Topology = {
     val builder = new StreamsBuilder
@@ -162,6 +167,7 @@ class TopologiesTest extends AnyFunSuite {
 
   private def foreignKeyJoinTopology(inner: Boolean = false): Topology = {
     val builder = new StreamsBuilder
+
 
     val productTable = builder
       .table[String, ProductValue]("product", Consumed.`with`(Serdes.String(), new JsonSerde[ProductValue]))
