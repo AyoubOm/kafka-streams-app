@@ -1,8 +1,8 @@
-package com.ayoubom.kafka
+package myapps.serdes
 
-import com.ayoubom.kafka.JsonSerde.{Encoding, JsonObjMapper}
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
+import myapps.serdes.JsonSerde.{Encoding, JsonObjMapper}
 import org.apache.kafka.common.serialization.{Deserializer, Serde, Serializer}
 
 import scala.reflect.ClassTag
@@ -34,4 +34,3 @@ object JsonSerde {
 
   val Encoding = "UTF-8"
 }
-
