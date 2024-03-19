@@ -1,6 +1,6 @@
 package com.ayoubom.kafka
 
-import myapps.serdes.{JsonSerializer, JsonSerde}
+import myapps.serdes.{JsonSerde, JsonSerializer}
 import org.apache.kafka.common.serialization._
 import org.apache.kafka.streams._
 import org.apache.kafka.streams.kstream._
@@ -63,13 +63,52 @@ class TopologiesTest extends AnyFunSuite {
     readOutputTopic(sd.outputTopic)
   }
 
+  test("foreign key join") {
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(foreignKeyJoinTopology())
+    val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new JsonSerializer[ProductValue])
+    val inputTopic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
+    val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
+
+    inputTopic1.pipeInput("3 bands", ProductValue("adidas", "3 bands"))
+    inputTopic2.pipeInput("adidas", 3)
+    inputTopic2.pipeInput("puma", 4)
+    inputTopic1.pipeInput(new TestRecord[String, ProductValue]("3 bands", ProductValue(null, "3 bands")))
+
+    readOutputTopic(outputTopic)
+  }
+
+  test("session window") {
+    val baseTime = Instant.now().minusSeconds(10)
+
+    val sessionWindowSerializer = new SessionWindowedSerializer[String](new StringSerializer)
+    val sessionWindowDeserializer = new SessionWindowedDeserializer[String](new StringDeserializer)
+
+    val windowedSerde = Serdes.serdeFrom(sessionWindowSerializer, sessionWindowDeserializer)
+
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(sessionTopology)
+    val inputTopic = testDriver.createInputTopic("input-topic", new StringSerializer, new IntegerSerializer)
+    val outputTopic = testDriver.createOutputTopic("output-topic", windowedSerde.deserializer(), new LongDeserializer)
+
+    inputTopic.pipeInput("foo", 3, baseTime)
+    inputTopic.pipeInput("bar", 1, baseTime)
+    inputTopic.pipeInput("foo", 2, baseTime.plusSeconds(1))
+    inputTopic.pipeInput("bar", 1, baseTime.plusSeconds(1))
+    inputTopic.pipeInput("bar", 1, baseTime.plusSeconds(2))
+    inputTopic.pipeInput("foo", 3, baseTime.plusSeconds(4))
+    inputTopic.pipeInput("bar", 1, baseTime.plusSeconds(4))
+    inputTopic.pipeInput("bar", 1, baseTime.plusSeconds(5))
+
+    readOutputTopic(outputTopic)
+  }
+
 
   private def windowTopology: Topology = {
     val builder = new StreamsBuilder
 
     val windowSize = Duration.ofSeconds(1)
     val tumblingWindow = TimeWindows.ofSizeWithNoGrace(windowSize).advanceBy(windowSize)
-
 
     val windowedSerializer = new TimeWindowedSerializer[String](new StringSerializer)
     val windowedDeserializer = new TimeWindowedDeserializer[String](new StringDeserializer, windowSize.toMillis)
@@ -106,7 +145,6 @@ class TopologiesTest extends AnyFunSuite {
   private def foreignKeyJoinTopology(inner: Boolean = false): Topology = {
     val builder = new StreamsBuilder
 
-
     val productTable = builder
       .table[String, ProductValue]("product", Consumed.`with`(Serdes.String(), new JsonSerde[ProductValue]))
 
@@ -131,7 +169,26 @@ class TopologiesTest extends AnyFunSuite {
     builder.build()
   }
 
-  private def setUpDriver(topology: Topology, inputTopicName: String, outputTopicName: String) = {
+  private def sessionTopology: Topology = {
+    val builder = new StreamsBuilder
+
+    val sessionWindowSerializer = new SessionWindowedSerializer[String](new StringSerializer)
+    val sessionWindowDeserializer = new SessionWindowedDeserializer[String](new StringDeserializer)
+
+    val windowedSerde = Serdes.serdeFrom(sessionWindowSerializer, sessionWindowDeserializer)
+
+    builder
+      .stream[String, Integer]("input-topic", Consumed.`with`(Serdes.String(), Serdes.Integer()))
+      .groupByKey
+      .windowedBy(SessionWindows.ofInactivityGapWithNoGrace(Duration.ofSeconds(2)))
+      .count()
+      .toStream
+      .to("output-topic", Produced.`with`(windowedSerde, Serdes.Long()))
+
+    builder.build()
+  }
+
+  private def setUpDriver(topology: Topology, inputTopicName: String, outputTopicName: String): StreamsDriver = {
     val props = new Properties()
     props.setProperty(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kafka-streams/")
     props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
@@ -150,7 +207,7 @@ class TopologiesTest extends AnyFunSuite {
                                   )
 
 
-  private def readOutputTopic(topic: TestOutputTopic[String, Integer]): Unit = {
+  private def readOutputTopic(topic: TestOutputTopic[_, _]): Unit = {
     while (!topic.isEmpty) {
       println(topic.readKeyValue())
     }
