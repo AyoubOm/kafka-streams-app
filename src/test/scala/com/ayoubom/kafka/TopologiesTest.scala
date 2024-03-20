@@ -3,15 +3,21 @@ package com.ayoubom.kafka
 import org.apache.kafka.common.serialization._
 import org.apache.kafka.streams._
 import org.apache.kafka.streams.kstream._
-import org.apache.kafka.streams.state.WindowStore
-import org.apache.kafka.streams.state.internals.RocksDbWindowBytesStoreSupplier
 import org.apache.kafka.streams.test.TestRecord
+import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
 
-import java.time.{Duration, Instant}
+import java.io.File
 import java.util.Properties
+import scala.reflect.io.Directory
 
-class TopologiesTest extends AnyFunSuite {
+class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
+
+  override def afterEach(): Unit = {
+    val directory = new Directory(new File("/tmp/kafka-streams/"))
+    directory.deleteRecursively()
+    super.afterEach()
+  }
 
   test("test driver") {
     val props = new Properties()
@@ -79,9 +85,9 @@ class TopologiesTest extends AnyFunSuite {
     val inputTopic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
     val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
 
-    inputTopic1.pipeInput("3 bands", "adidas")
     inputTopic2.pipeInput("adidas", 3)
     inputTopic2.pipeInput("puma", 4)
+    inputTopic1.pipeInput("3 bands", "adidas")
     inputTopic1.pipeInput(new TestRecord[String, String]("3 bands", null))
 
     readOutputTopic(outputTopic)
