@@ -120,9 +120,9 @@ class TopologiesTest extends AnyFunSuite {
     val inputTopic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
     val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
 
-    inputTopic1.pipeInput("macbook m2", ProductValue("apple", ""))
+    inputTopic1.pipeInput("macbook m2", ProductValue(null, ""))
     inputTopic2.pipeInput("apple", 3)
-    inputTopic1.pipeInput("macbook m2", null)
+    inputTopic1.pipeInput("macbook m2", ProductValue("apple", ""))
 
     readOutputTopic(outputTopic)
   }
