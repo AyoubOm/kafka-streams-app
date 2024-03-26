@@ -45,102 +45,126 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
 
     builder.build()
   }
-/*
-  test("window topology") {
-    val sd = setUpDriver(windowTopology, "earnings", "agg-earnings")
+  /*
+    test("window topology") {
+      val sd = setUpDriver(windowTopology, "earnings", "agg-earnings")
 
-    val baseTime = Instant.now().minusSeconds(10)
+      val baseTime = Instant.now().minusSeconds(10)
 
-    sd.inputTopic.pipeInput("hmida", 10, baseTime)
-    sd.inputTopic.pipeInput("hmida", 20, baseTime)
-    sd.inputTopic.pipeInput("hmida", 15, baseTime)
-    sd.inputTopic.pipeInput("lambda", 50, baseTime.plusSeconds(1))
-    sd.inputTopic.pipeInput("hmida", 30, baseTime.plusSeconds(1))
+      sd.inputTopic.pipeInput("hmida", 10, baseTime)
+      sd.inputTopic.pipeInput("hmida", 20, baseTime)
+      sd.inputTopic.pipeInput("hmida", 15, baseTime)
+      sd.inputTopic.pipeInput("lambda", 50, baseTime.plusSeconds(1))
+      sd.inputTopic.pipeInput("hmida", 30, baseTime.plusSeconds(1))
 
-    val store: WindowStore[String, Integer] = sd.driver.getWindowStore("window_store")
+      val store: WindowStore[String, Integer] = sd.driver.getWindowStore("window_store")
 
-    val iterator = store.fetchAll(baseTime.minusSeconds(1), baseTime.plusSeconds(1))
+      val iterator = store.fetchAll(baseTime.minusSeconds(1), baseTime.plusSeconds(1))
 
-    println(s"baseTime = $baseTime")
-    while (iterator.hasNext) {
-      val valueAndTime = iterator.next()
-      println(
-        s"Window=[${Instant.ofEpochMilli(valueAndTime.key.window().start)}, ${Instant.ofEpochMilli(valueAndTime.key.window().end)}]" +
-        s" - key=${valueAndTime.key.key} - value=${valueAndTime.value}")
+      println(s"baseTime = $baseTime")
+      while (iterator.hasNext) {
+        val valueAndTime = iterator.next()
+        println(
+          s"Window=[${Instant.ofEpochMilli(valueAndTime.key.window().start)}, ${Instant.ofEpochMilli(valueAndTime.key.window().end)}]" +
+          s" - key=${valueAndTime.key.key} - value=${valueAndTime.value}")
+      }
+
+      readOutputTopic(sd.outputTopic)
     }
 
-    readOutputTopic(sd.outputTopic)
-  }
 
+   */
 
- */
-
-  test("foreign key join") {
+  test("foreign key join: INNER 1st bug") {
     val props = new Properties()
     props.setProperty(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kafka-streams/")
     props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
 
     val testDriver: TopologyTestDriver = new TopologyTestDriver(foreignKeyJoinTopology, props)
-    val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new StringSerializer)
+    val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new JsonSerializer[ProductValue])
+    val inputTopic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
+    val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
+
+    inputTopic2.pipeInput("adidas", 3)
+
+    inputTopic1.pipeInput("pk1", ProductValue(null, "pk1"))
+    inputTopic1.pipeInput("pk1", ProductValue("adidas", "pk1"))
+
+
+    readOutputTopic(outputTopic)
+  }
+
+  test("foreign key join: INNER 2nd bug") {
+    val props = new Properties()
+    props.setProperty(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kafka-streams/")
+    props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(foreignKeyJoinTopology, props)
+    val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new JsonSerializer[ProductValue])
     val inputTopic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
     val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
 
     inputTopic2.pipeInput("adidas", 3)
     inputTopic2.pipeInput("puma", 4)
-    inputTopic1.pipeInput("3 bands", "adidas")
-    inputTopic1.pipeInput(new TestRecord[String, String]("3 bands", null))
+
+    inputTopic1.pipeInput("pk1", ProductValue("adidas", "pk1"))
+    inputTopic1.pipeInput("pk1", ProductValue(null, "pk1"))
+    inputTopic1.pipeInput("pk1", ProductValue("adidas", "pk1"))
+    //inputTopic1.pipeInput("pk1", ProductValue("adidas", "pk1"))
+
 
     readOutputTopic(outputTopic)
   }
-/*
-  private def windowTopology: Topology = {
-    val builder = new StreamsBuilder
 
-    val windowSize = Duration.ofSeconds(1)
-    //val tumblingWindow = TimeWindows.ofSizeWithNoGrace(windowSize).advanceBy(windowSize)
+  /*
+    private def windowTopology: Topology = {
+      val builder = new StreamsBuilder
+
+      val windowSize = Duration.ofSeconds(1)
+      //val tumblingWindow = TimeWindows.ofSizeWithNoGrace(windowSize).advanceBy(windowSize)
 
 
-    val windowedSerializer = new TimeWindowedSerializer[String](new StringSerializer)
-    val windowedDeserializer = new TimeWindowedDeserializer[String](new StringDeserializer, windowSize.toMillis)
-    val windowedSerde = Serdes.serdeFrom(windowedSerializer, windowedDeserializer)
+      val windowedSerializer = new TimeWindowedSerializer[String](new StringSerializer)
+      val windowedDeserializer = new TimeWindowedDeserializer[String](new StringDeserializer, windowSize.toMillis)
+      val windowedSerde = Serdes.serdeFrom(windowedSerializer, windowedDeserializer)
 
-    val storeSupplier =
-      new RocksDbWindowBytesStoreSupplier(
-        "window_store",
-        Duration.ofSeconds(10).toMillis,
-        Duration.ofSeconds(10).toMillis,
-        windowSize.toMillis,
-        false,
-        false)
+      val storeSupplier =
+        new RocksDbWindowBytesStoreSupplier(
+          "window_store",
+          Duration.ofSeconds(10).toMillis,
+          Duration.ofSeconds(10).toMillis,
+          windowSize.toMillis,
+          false,
+          false)
 
-    class IntegerAdd extends Reducer[Integer] {
-      override def apply(value1: Integer, value2: Integer): Integer = value1 + value2
+      class IntegerAdd extends Reducer[Integer] {
+        override def apply(value1: Integer, value2: Integer): Integer = value1 + value2
+      }
+
+
+      builder
+        .stream[String, Integer]("earnings", Consumed.`with`(Serdes.String(), Serdes.Integer()))
+        .groupByKey()
+        .windowedBy(tumblingWindow)
+        .reduce(
+          new IntegerAdd,
+          Materialized.as(storeSupplier).withKeySerde(Serdes.String()).withValueSerde(Serdes.Integer())
+        )
+        .toStream
+        .to("agg-earnings", Produced.`with`(windowedSerde, Serdes.Integer()))
+
+      builder.build()
     }
-
-
-    builder
-      .stream[String, Integer]("earnings", Consumed.`with`(Serdes.String(), Serdes.Integer()))
-      .groupByKey()
-      .windowedBy(tumblingWindow)
-      .reduce(
-        new IntegerAdd,
-        Materialized.as(storeSupplier).withKeySerde(Serdes.String()).withValueSerde(Serdes.Integer())
-      )
-      .toStream
-      .to("agg-earnings", Produced.`with`(windowedSerde, Serdes.Integer()))
-
-    builder.build()
-  }
-*/
+  */
   private def foreignKeyJoinTopology: Topology = {
     val builder = new StreamsBuilder
 
     builder
-      .table[String, String]("product", Consumed.`with`(Serdes.String(), Serdes.String()))
-      .leftJoin[Integer, String, Integer](
+      .table[String, ProductValue]("product", Consumed.`with`(Serdes.String(), new JsonSerde[ProductValue]))
+      .join[Integer, String, Integer](
         builder.table[String, Integer]("merchant", Consumed.`with`(Serdes.String(), Serdes.Integer())),
-        productMerchantValue => productMerchantValue,
-        (productMerchant: String, merchantRank: Integer) => merchantRank
+        product => product.merchant,
+        (_: ProductValue, merchantRank: Integer) => merchantRank
       )
       .toStream
       .to("output-join", Produced.`with`(Serdes.String(), Serdes.Integer()))
@@ -174,3 +198,5 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
   }
 
 }
+
+case class ProductValue(merchant: String, name: String)
