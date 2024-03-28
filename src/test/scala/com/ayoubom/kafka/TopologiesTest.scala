@@ -105,13 +105,66 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
     val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
 
     inputTopic2.pipeInput("adidas", 3)
-    inputTopic2.pipeInput("puma", 4)
 
     inputTopic1.pipeInput("pk1", ProductValue("adidas", "pk1"))
     inputTopic1.pipeInput("pk1", ProductValue(null, "pk1"))
     inputTopic1.pipeInput("pk1", ProductValue("adidas", "pk1"))
     //inputTopic1.pipeInput("pk1", ProductValue("adidas", "pk1"))
 
+
+    readOutputTopic(outputTopic)
+  }
+
+  test("foreign key join: INNER 2nd bug bis") {
+    val props = new Properties()
+    props.setProperty(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kafka-streams/")
+    props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(foreignKeyJoinTopology, props)
+    val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new JsonSerializer[ProductValue])
+    val inputTopic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
+    val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
+
+    inputTopic2.pipeInput("fk1", 3)
+
+    inputTopic1.pipeInput("pk1", ProductValue("fk1", "pk1"))
+    inputTopic1.pipeInput("pk1", ProductValue(null, "pk1"))
+
+    readOutputTopic(outputTopic)
+  }
+
+  test("foreign key join: INNER 3rd bug") {
+    val props = new Properties()
+    props.setProperty(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kafka-streams/")
+    props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(foreignKeyJoinTopology, props)
+    val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new JsonSerializer[ProductValue])
+    val inputTopic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
+    val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
+
+
+    inputTopic1.pipeInput("pk1", ProductValue("fk1", "pk1"))
+    inputTopic1.pipeInput("pk1", ProductValue("fk1", "pk1")) // unexpected record with null value (I believe?)
+
+
+    readOutputTopic(outputTopic)
+  }
+
+  test("foreign key join: INNER 4th bug ?") {
+    val props = new Properties()
+    props.setProperty(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kafka-streams/")
+    props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(foreignKeyJoinTopology, props)
+    val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new JsonSerializer[ProductValue])
+    val inputTopic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
+    val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
+
+    inputTopic2.pipeInput("fk1", 3)
+
+    inputTopic1.pipeInput("pk1", ProductValue("fk1", "pk1"))
+    inputTopic1.pipeInput("pk1", ProductValue("fk2", "pk1"))
 
     readOutputTopic(outputTopic)
   }
