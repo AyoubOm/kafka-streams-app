@@ -63,6 +63,31 @@ class TopologiesTest extends AnyFunSuite {
     readOutputTopic(sd.outputTopic)
   }
 
+  test("session window") {
+    val baseTime = Instant.now().minusSeconds(10)
+
+    val sessionWindowSerializer = new SessionWindowedSerializer[String](new StringSerializer)
+    val sessionWindowDeserializer = new SessionWindowedDeserializer[String](new StringDeserializer)
+
+    val windowedSerde = Serdes.serdeFrom(sessionWindowSerializer, sessionWindowDeserializer)
+
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(sessionTopology)
+    val inputTopic = testDriver.createInputTopic("input-topic", new StringSerializer, new IntegerSerializer)
+    val outputTopic = testDriver.createOutputTopic("output-topic", windowedSerde.deserializer(), new LongDeserializer)
+
+    inputTopic.pipeInput("foo", 3, baseTime)
+    inputTopic.pipeInput("bar", 1, baseTime)
+    inputTopic.pipeInput("foo", 2, baseTime.plusSeconds(1))
+    inputTopic.pipeInput("bar", 1, baseTime.plusSeconds(1))
+    inputTopic.pipeInput("bar", 1, baseTime.plusSeconds(2))
+    inputTopic.pipeInput("foo", 3, baseTime.plusSeconds(4))
+    inputTopic.pipeInput("bar", 1, baseTime.plusSeconds(4))
+    inputTopic.pipeInput("bar", 1, baseTime.plusSeconds(5))
+
+    readOutputTopic(outputTopic)
+  }
+
   test("foreign key join: 1 st bug") {
     // bug when changing the foreign key to either a null or a non-null value (a wrong event with a null foreign key is output in the join)
 
@@ -182,6 +207,24 @@ class TopologiesTest extends AnyFunSuite {
     readOutputTopic(outputTopic)
   }
 
+  test("foreign key join: INNER 4th bug ?") {
+    val props = new Properties()
+    props.setProperty(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kafka-streams/")
+    props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(foreignKeyJoinTopology(), props)
+    val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new JsonSerializer[ProductValue])
+    val inputTopic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
+    val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
+
+    inputTopic2.pipeInput("fk1", 3)
+
+    inputTopic1.pipeInput("pk1", ProductValue("fk1", "pk1"))
+    inputTopic1.pipeInput("pk1", ProductValue("fk2", "pk1"))
+
+    readOutputTopic(outputTopic)
+  }
+
   private def windowTopology: Topology = {
     val builder = new StreamsBuilder
 
@@ -247,6 +290,9 @@ class TopologiesTest extends AnyFunSuite {
 
     builder.build()
   }
+
+
+
 
   private def sessionTopology: Topology = {
     val builder = new StreamsBuilder
