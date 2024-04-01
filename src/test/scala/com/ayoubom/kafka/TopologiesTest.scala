@@ -215,7 +215,7 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
     readOutputTopic(outputTopic)
   }
 
-  test("join KTables") {
+  test("join KTable KTable") {
     val props = new Properties()
     props.setProperty(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kafka-streams/")
     props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
@@ -225,9 +225,45 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
     val inputTopic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
     val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
 
-    inputTopic2.pipeInput("key2", 3)
+    inputTopic2.pipeInput("key1", 3)
 
     inputTopic1.pipeInput("key1", ProductValue("fk1", "pk1"))
+    inputTopic1.pipeInput("key1", ProductValue("fk1", "pk1"))
+
+    inputTopic2.pipeInput("key1", null)
+    inputTopic2.pipeInput("key2", null)
+    //  inputTopic1.pipeInput("key1", ProductValue("fk1", "pk1"))
+
+    readOutputTopic(outputTopic)
+  }
+
+  test("self join KTable") {
+    val props = new Properties()
+    props.setProperty(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kafka-streams/")
+    props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(kTableSelfJoinTopology, props)
+    val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new JsonSerializer[ProductValue])
+    val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new StringDeserializer)
+
+    inputTopic1.pipeInput("key1", ProductValue("fk1", "pk1"))
+
+    readOutputTopic(outputTopic)
+  }
+
+  test("self join KStream") {
+    val props = new Properties()
+    props.setProperty(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kafka-streams/")
+    props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(kStreamSelfJoinTopology, props)
+    val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new JsonSerializer[ProductValue])
+    val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new StringDeserializer)
+
+    val baseTime = Instant.now().minusSeconds(10)
+
+    inputTopic1.pipeInput("key1", ProductValue("fk1", "pk1"), baseTime)
+    inputTopic1.pipeInput("key1", ProductValue("fk1", "pk1"), baseTime.plusSeconds(1))
 
     readOutputTopic(outputTopic)
   }
@@ -367,6 +403,44 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
       )
       .toStream
       .to("output-join", Produced.`with`(Serdes.String(), Serdes.Integer()))
+
+    builder.build()
+  }
+
+  private def kTableSelfJoinTopology: Topology = {
+    val builder = new StreamsBuilder
+
+    val productTable = builder
+      .table[String, ProductValue]("product", Consumed.`with`(Serdes.String(), new JsonSerde[ProductValue]))
+
+    productTable
+      .join(
+        productTable,
+        (first: ProductValue, second: ProductValue) => first.merchant + second.merchant
+      )
+      .toStream
+      .to("output-join", Produced.`with`(Serdes.String(), Serdes.String()))
+
+    builder.build()
+  }
+
+  private def kStreamSelfJoinTopology: Topology = {
+    val builder = new StreamsBuilder
+
+    val valueJoiner: ValueJoiner[ProductValue, ProductValue, String] =
+      (left: ProductValue, right: ProductValue) => left.merchant + right.merchant
+
+    val productStream = builder
+      .stream[String, ProductValue]("product", Consumed.`with`(Serdes.String(), new JsonSerde[ProductValue]))
+
+    productStream
+      .join(
+        productStream,
+        valueJoiner,
+        JoinWindows.ofTimeDifferenceWithNoGrace(Duration.ofSeconds(2)),
+        StreamJoined.`with`(Serdes.String(), new JsonSerde[ProductValue], new JsonSerde[ProductValue])
+      )
+      .to("output-join", Produced.`with`(Serdes.String(), Serdes.String()))
 
     builder.build()
   }
