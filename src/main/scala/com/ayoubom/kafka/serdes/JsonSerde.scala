@@ -1,8 +1,8 @@
-package myapps.serdes
+package com.ayoubom.kafka.serdes
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
-import myapps.serdes.JsonSerde.{Encoding, JsonObjMapper}
+import JsonSerde.{Encoding, JsonObjMapper}
 import org.apache.kafka.common.serialization.{Deserializer, Serde, Serializer}
 
 import scala.reflect.ClassTag

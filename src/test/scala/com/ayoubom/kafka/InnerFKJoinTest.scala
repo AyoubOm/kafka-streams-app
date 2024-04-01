@@ -1,6 +1,6 @@
 package com.ayoubom.kafka
 
-import myapps.serdes.{JsonSerde, JsonSerializer}
+import com.ayoubom.kafka.serdes.{JsonSerde, JsonSerializer}
 import org.apache.kafka.common.serialization._
 import org.apache.kafka.streams._
 import org.apache.kafka.streams.kstream.{Consumed, Produced}
