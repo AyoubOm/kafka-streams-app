@@ -20,29 +20,35 @@ object Producer extends App {
   props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true")
   props.put(ProducerConfig.LINGER_MS_CONFIG, 1)
 
-  // TODO: In case of tumbling windows without grace, Can kafka update a previous window even when a new new window starts ??!
-  //  How can it be the case since the first window is already closed ?
-  //   -> [TESTED] No, once a second window starts, the first window is no longer updated and records happening at that window are
-  //    dropped
-
   val producer = new KafkaProducer[String, String](props)
 
-  val baseTime = new Date(2024 - 1900, 3, 3, 9, 30, 0)
+  val baseTime = new Date(2024 - 1900, 3, 6, 9, 30, 0)
     .toInstant
-    .plusSeconds(60)
 
-  sendMessage(baseTime.plusSeconds(2))
-  sendMessage(baseTime.plusSeconds(10))
-  sendMessage(baseTime.plusSeconds(11))
+  /*
+  sendMessage("input1", baseTime.plusSeconds(5), "key1", "5")
+
   Thread.sleep(2000)
-  sendMessage(baseTime.plusSeconds(8))
 
-  private def sendMessage(timestamp: Instant): Unit = {
+  sendMessage("input2", baseTime.plusSeconds(25), "key2","25") // advances stream Time
+
+  Thread.sleep(2000)
+
+  sendMessage("input2", baseTime.plusSeconds(6), "key1","6") // outputs sthg ?
+   */
+
+  sendMessage("input1", baseTime.plusSeconds(1), "key1", "1")
+  sendMessage("input2", baseTime.plusSeconds(1), "key1", "1")
+
+
+
+
+  private def sendMessage(topic: String, timestamp: Instant, key: String = "key1", value: String = "value"): Unit = {
     producer
-      .send(new ProducerRecord[String, String]("input", null, timestamp.toEpochMilli, s"key", "value"))
+      .send(new ProducerRecord[String, String](topic, null, timestamp.toEpochMilli, key, value))
       .get()
 
-    println(s"sent record - $timestamp")
+    println(s"sent record - $topic - $timestamp")
   }
 
   private def schedule() = {
@@ -57,11 +63,11 @@ object Producer extends App {
           val second = timestamp.getEpochSecond % 60
 
           if (second != 58) {
-            sendMessage(timestamp)
+            sendMessage("input", timestamp)
           }
 
           if (second == 2) {
-            sendMessage(timestamp.minusSeconds(4))
+            sendMessage("input", timestamp.minusSeconds(4))
           }
         }
       }, Date.from(Instant.now().plusSeconds(60 - startingSecond)), 1000L)

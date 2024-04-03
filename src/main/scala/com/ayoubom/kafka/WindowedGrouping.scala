@@ -17,6 +17,11 @@ object WindowedGrouping extends App {
 
 
   private def topology(lateness: Duration = Duration.ZERO): Topology = {
+    // In case of tumbling windows without grace, Can kafka update a previous window even when a new new window starts ??!
+    //  How can it be the case since the first window is already closed ?
+    //   -> [TESTED] No, once a second window starts, the first window is no longer updated and records happening at that window are
+    //    dropped
+
     /*
     Behaviors
       - No Grace: Kafka Streams uses stream time which is only advanced by events. With NoGrace the window is closed when
