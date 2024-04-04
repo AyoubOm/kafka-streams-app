@@ -1,6 +1,6 @@
-package myapps
+package com.ayoubom.kafka
 
-import myapps.serdes.JsonSerde
+import com.ayoubom.kafka.serdes.JsonSerde
 import org.apache.kafka.common.serialization.Serdes
 import org.apache.kafka.streams.kstream.{Consumed, Produced}
 import org.apache.kafka.streams.{KafkaStreams, StreamsBuilder, StreamsConfig, Topology}
@@ -20,7 +20,7 @@ object ForeignJoin extends App {
 
   streams.start()
 
-  Runtime.getRuntime.addShutdownHook(new Thread(() => streams.close))
+  Runtime.getRuntime.addShutdownHook(new Thread(() => streams.close()))
 
   private def leftForeignKeyJoinTopology: Topology = {
     val builder = new StreamsBuilder
@@ -44,26 +44,6 @@ object ForeignJoin extends App {
 
     builder.build()
   }
-
-  private def innerForeignKeyJoinTopology: Topology = {
-    val builder = new StreamsBuilder
-
-    val leftTable = builder
-      .table[String, LeftValue]("left-topic", Consumed.`with`(Serdes.String(), new JsonSerde[LeftValue]))
-
-    val rightTable = builder
-      .table[String, Integer]("right-topic", Consumed.`with`(Serdes.String(), Serdes.Integer()))
-
-    leftTable
-      .join[Integer, String, Integer](
-        rightTable,
-        leftValue => leftValue.foreignKey,
-        (_: LeftValue, foreignValue: Integer) => foreignValue
-      ).toStream.to("join-output", Produced.`with`(Serdes.String(), Serdes.Integer()))
-
-    builder.build()
-  }
-
 
 }
 

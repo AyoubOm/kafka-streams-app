@@ -1,6 +1,6 @@
 package com.ayoubom.kafka
 
-import myapps.serdes.{JsonSerde, JsonSerializer}
+import com.ayoubom.kafka.serdes.{JsonSerde, JsonSerializer}
 import org.apache.kafka.common.serialization._
 import org.apache.kafka.streams._
 import org.apache.kafka.streams.kstream._
@@ -11,8 +11,8 @@ import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
 
 import java.io.File
-import java.time.{Duration, Instant}
-import java.util.Properties
+import java.time.{Duration, Instant, ZoneOffset}
+import java.util.{Date, Properties}
 import scala.reflect.io.Directory
 
 class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
@@ -275,16 +275,25 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
 
     val testDriver: TopologyTestDriver = new TopologyTestDriver(joinKStreamKStreamTopology, props)
     val inputTopic1 = testDriver.createInputTopic("product", new StringSerializer, new JsonSerializer[ProductValue])
-    val inputTopic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
+    val topic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
     val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
 
-    val baseTime = Instant.now().minusSeconds(10)
+    val baseTime = new Date(2024-1900, 4, 3, 9, 30, 0).toInstant
 
-    inputTopic1.pipeInput(null, ProductValue("fk1", "pk1"), baseTime)
-    inputTopic1.pipeInput("key1", ProductValue("fk1", "pk1"), baseTime.plusSeconds(5))
+    inputTopic1.pipeInput("key1", ProductValue("", ""), baseTime)
 
-    inputTopic2.pipeInput(null, 3, baseTime)
-    inputTopic2.pipeInput("key2", 3, baseTime.plusSeconds(5))
+    topic2.pipeInput("key1", 4, baseTime.plusSeconds(4))
+    inputTopic1.pipeInput("key1", ProductValue("", ""), baseTime.plusSeconds(5))
+
+    topic2.pipeInput("key1", 6, baseTime.plusSeconds(3600*24*2))
+
+    Thread.sleep(2000)
+
+    topic2.pipeInput("key1", 7, baseTime.plusSeconds(8)) // TODO: why not ignored ?
+    inputTopic1.pipeInput("key1", ProductValue("", ""), baseTime.plusSeconds(8))
+
+
+    // inputTopic1.pipeInput("key1", ProductValue("", ""), baseTime.plusSeconds(2))
 
     readOutputTopic(outputTopic)
   }
@@ -454,10 +463,10 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
       .stream[String, ProductValue]("product", Consumed.`with`(Serdes.String(), new JsonSerde[ProductValue]))
 
     productStream
-      .leftJoin[Integer, Integer](
+      .join[Integer, Integer](
         builder.stream[String, Integer]("merchant", Consumed.`with`(Serdes.String(), Serdes.Integer())),
         valueJoiner,
-        JoinWindows.ofTimeDifferenceWithNoGrace(Duration.ofSeconds(2)),
+        JoinWindows.ofTimeDifferenceWithNoGrace(Duration.ofSeconds(10)),
         StreamJoined.`with`(Serdes.String(), new JsonSerde[ProductValue], Serdes.Integer())
       )
       .to("output-join", Produced.`with`(Serdes.String(), Serdes.Integer()))
