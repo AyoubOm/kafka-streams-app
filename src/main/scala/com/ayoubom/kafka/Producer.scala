@@ -22,25 +22,24 @@ object Producer extends App {
 
   val producer = new KafkaProducer[String, String](props)
 
-  val baseTime = new Date(2024 - 1900, 3, 6, 9, 30, 0)
+  val baseTime = new Date(2024 - 1900, 3, 14, 9, 30, 0)
     .toInstant
 
-  /*
+  sendMessage("input1", baseTime.plusSeconds(2), "key1", "2")
+
+  sendMessage("input2", baseTime.plusSeconds(4), "key1", "4")
+
   sendMessage("input1", baseTime.plusSeconds(5), "key1", "5")
 
-  Thread.sleep(2000)
+  sendMessage("input2", baseTime.plusSeconds(3600), "key1", "3600")
 
-  sendMessage("input2", baseTime.plusSeconds(25), "key2","25") // advances stream Time
+  Thread.sleep(5000)
 
-  Thread.sleep(2000)
-
-  sendMessage("input2", baseTime.plusSeconds(6), "key1","6") // outputs sthg ?
-   */
-
-  sendMessage("input1", baseTime.plusSeconds(1), "key1", "1")
-  sendMessage("input2", baseTime.plusSeconds(1), "key1", "1")
+  sendMessage("input1", baseTime.plusSeconds(24), "key1", "24")
 
 
+  sendMessage("input2", baseTime.plusSeconds(8), "key1", "8") // why not ignored ?
+    // => it is only not ignored when stream of input1 is not advanced, when the window that matches with this value is not yet closed
 
 
   private def sendMessage(topic: String, timestamp: Instant, key: String = "key1", value: String = "value"): Unit = {

@@ -1,12 +1,27 @@
 package com.ayoubom.kafka
 
-import com.ayoubom.kafka.serdes.streamJoined
 import org.apache.kafka.common.serialization.Serdes
 import org.apache.kafka.streams.kstream._
 import org.apache.kafka.streams.{KafkaStreams, StreamsBuilder, StreamsConfig, Topology}
 
 import java.time.Duration
 import java.util.Properties
+
+/*
+  Conclusions:
+  - For a stream-stream join, do windows close ?
+      - Yes, a record at timestamp t is no more joined when stream time - length_of_window > t. For no grace stream join, the length of the windows = beforeMs + afterMs
+      - HOWEVER, we have a stream time per topic. stream time of input1 is advanced by events of topic 1 only. The following case can happen:
+          - Say afterMs = 10 and beforeMs = 10, and all following records have the same key
+              - input1 <— time: 1, v: 1
+              -     input2 <— time: 1, v: 1
+              -     input2 <— time: 30, v: 30 —-> here stream time of input2 is advanced to t=30 and first record of input2
+                                        is no longer joined
+              -     input2 <— time: 8, v: 8 (late record) —-> this record is joined with first record of input1,
+                                        because stream time of input1 is still at t=1 .. even if its window should be closed (30 - windowSize > 8)
+
+
+ */
 
 object WindowedJoin extends App {
 
@@ -32,7 +47,8 @@ object WindowedJoin extends App {
         streamsBuilder.stream[String, String]("input2", Consumed.`with`(Serdes.String(), Serdes.String())),
         valueJoiner,
         JoinWindows.ofTimeDifferenceWithNoGrace(Duration.ofSeconds(10)),
-        streamJoined
+        StreamJoined.`with`(Serdes.String(), Serdes.String(), Serdes.String())
+        // streamJoined
       )
       .to("join", Produced.`with`(Serdes.String(), Serdes.String()))
 

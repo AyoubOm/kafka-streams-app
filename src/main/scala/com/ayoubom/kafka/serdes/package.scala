@@ -4,8 +4,6 @@ import org.apache.kafka.common.serialization.Serdes
 import org.apache.kafka.streams.kstream.StreamJoined
 import org.apache.kafka.streams.state.internals.RocksDbWindowBytesStoreSupplier
 
-import java.time.Duration
-
 package object serdes {
 
   private def storeSupplier(storeName: String) =
@@ -18,7 +16,8 @@ package object serdes {
       true)
 
 
-  val streamJoined: StreamJoined[String, String, String] = StreamJoined.`with`(storeSupplier("this"), storeSupplier("other"))
+  val streamJoined: StreamJoined[String, String, String] =
+    StreamJoined.`with`(storeSupplier("this"), storeSupplier("other"))
     .withKeySerde(Serdes.String()).withValueSerde(Serdes.String()).withOtherValueSerde(Serdes.String())
 
 }
