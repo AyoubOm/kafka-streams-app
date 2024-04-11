@@ -1,6 +1,5 @@
-package com.ayoubom.kafka
+package com.ayoubom.kafka.utils
 
-import com.ayoubom.kafka.utils.IQueriesService
 import org.apache.kafka.streams.KafkaStreams
 import org.apache.kafka.streams.state.HostInfo
 

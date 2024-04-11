@@ -287,13 +287,31 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
 
     topic2.pipeInput("key1", 6, baseTime.plusSeconds(3600*24*2))
 
-    Thread.sleep(2000)
-
     topic2.pipeInput("key1", 7, baseTime.plusSeconds(8)) // TODO: why not ignored ?
     inputTopic1.pipeInput("key1", ProductValue("", ""), baseTime.plusSeconds(8))
 
-
     // inputTopic1.pipeInput("key1", ProductValue("", ""), baseTime.plusSeconds(2))
+
+    readOutputTopic(outputTopic)
+  }
+
+  test("aggregate on window close") {
+    val props = new Properties()
+    props.setProperty(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kafka-streams/")
+    props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(aggOnWindowCloseTopology, props)
+    val inputTopic = testDriver.createInputTopic("input-topic", new StringSerializer, new IntegerSerializer)
+    val outputTopic = testDriver.createOutputTopic("output-topic", new StringDeserializer, new LongDeserializer)
+
+    val baseTime = new Date(2024 - 1900, 4, 3, 9, 30, 0).toInstant
+
+    inputTopic.pipeInput("key1", 1, baseTime)
+    inputTopic.pipeInput("key1", 2, baseTime.plusSeconds(2))
+    inputTopic.pipeInput("key1", 3, baseTime.plusSeconds(4))
+    inputTopic.pipeInput("key1", 1, baseTime.plusSeconds(11))
+    inputTopic.pipeInput("key1", 2, baseTime.plusSeconds(15))
+    inputTopic.pipeInput("key1", 1, baseTime.plusSeconds(100))
 
     readOutputTopic(outputTopic)
   }
@@ -472,6 +490,25 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
       .to("output-join", Produced.`with`(Serdes.String(), Serdes.Integer()))
 
     builder.build()
+  }
+
+
+  private def aggOnWindowCloseTopology: Topology = {
+    val streams = new StreamsBuilder
+
+    val windowSize = Duration.ofSeconds(10)
+
+    streams
+      .stream[String, Integer]("input-topic", Consumed.`with`(Serdes.String(), Serdes.Integer()))
+      .groupByKey()
+      .windowedBy(TimeWindows.ofSizeWithNoGrace(windowSize).advanceBy(windowSize))
+      .emitStrategy(EmitStrategy.onWindowClose())
+      .count()
+      .toStream
+      .selectKey((key, _) => s"${key.window().start()}-${key.key()}")
+      .to("output-topic", Produced.`with`(Serdes.String(), Serdes.Long()))
+
+    streams.build()
   }
 
 
