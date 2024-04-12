@@ -1,4 +1,4 @@
-package com.ayoubom.kafka
+package com.ayoubom.kafka.apps
 
 import com.ayoubom.kafka.serdes.JsonSerde
 import org.apache.kafka.common.serialization.Serdes

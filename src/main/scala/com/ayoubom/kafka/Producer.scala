@@ -1,11 +1,8 @@
 package com.ayoubom.kafka
 
-import org.apache.kafka.clients.producer.ProducerConfig
+import org.apache.kafka.clients.producer.{KafkaProducer, ProducerConfig, ProducerRecord}
 
-import java.time.Instant
-import java.util.{Date, Properties, Timer, TimerTask}
-import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
-import java.time.ZoneOffset
+import java.util.{Date, Properties}
 
 object Producer extends App {
 
@@ -22,55 +19,32 @@ object Producer extends App {
 
   val producer = new KafkaProducer[String, String](props)
 
-  val baseTime = new Date(2024 - 1900, 3, 14, 9, 30, 0)
+  val baseTime = new Date(2024 - 1900, 3, 15, 9, 30, 0)
     .toInstant
 
-  sendMessage("input1", baseTime.plusSeconds(2), "key1", "2")
+  sendMessage("input", "key1", 4)
 
-  sendMessage("input2", baseTime.plusSeconds(4), "key1", "4")
+ Thread.sleep(5000)
 
-  sendMessage("input1", baseTime.plusSeconds(5), "key1", "5")
+  sendMessage("input", "key1", 12)
 
-  sendMessage("input2", baseTime.plusSeconds(3600), "key1", "3600")
+ Thread.sleep(3000)
 
-  Thread.sleep(5000)
-
-  sendMessage("input1", baseTime.plusSeconds(24), "key1", "24")
+  sendMessage("input", "key1", 22)
 
 
-  sendMessage("input2", baseTime.plusSeconds(8), "key1", "8") // why not ignored ?
-    // => it is only not ignored when stream of input1 is not advanced, when the window that matches with this value is not yet closed
 
 
-  private def sendMessage(topic: String, timestamp: Instant, key: String = "key1", value: String = "value"): Unit = {
+//  sendMessage("input", "key1", 30)
+
+
+  private def sendMessage(topic: String, key: String = "key1", value: Int): Unit = {
+    val timestamp = baseTime.plusSeconds(value)
     producer
-      .send(new ProducerRecord[String, String](topic, null, timestamp.toEpochMilli, key, value))
+      .send(new ProducerRecord[String, String](topic, null, timestamp.toEpochMilli, key, value.toString))
       .get()
 
     println(s"sent record - $topic - $timestamp")
-  }
-
-  private def schedule() = {
-    val startTime = Instant.now()
-
-    val startingSecond = startTime.atZone(ZoneOffset.UTC).getSecond
-
-    new Timer().schedule(
-      new TimerTask() {
-        override def run(): Unit = {
-          val timestamp = Instant.now()
-          val second = timestamp.getEpochSecond % 60
-
-          if (second != 58) {
-            sendMessage("input", timestamp)
-          }
-
-          if (second == 2) {
-            sendMessage("input", timestamp.minusSeconds(4))
-          }
-        }
-      }, Date.from(Instant.now().plusSeconds(60 - startingSecond)), 1000L)
-
   }
 
 }

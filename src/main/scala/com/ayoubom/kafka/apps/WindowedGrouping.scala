@@ -1,4 +1,4 @@
-package com.ayoubom.kafka
+package com.ayoubom.kafka.apps
 
 import org.apache.kafka.common.serialization.{Serde, Serdes, StringDeserializer, StringSerializer}
 import org.apache.kafka.streams.kstream._
