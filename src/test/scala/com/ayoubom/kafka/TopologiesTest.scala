@@ -3,6 +3,7 @@ package com.ayoubom.kafka
 import com.ayoubom.kafka.serdes.{JsonSerde, JsonSerializer}
 import org.apache.kafka.common.serialization._
 import org.apache.kafka.streams._
+import org.apache.kafka.streams.kstream.Suppressed.BufferConfig
 import org.apache.kafka.streams.kstream._
 import org.apache.kafka.streams.state.WindowStore
 import org.apache.kafka.streams.state.internals.RocksDbWindowBytesStoreSupplier
@@ -11,7 +12,7 @@ import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
 
 import java.io.File
-import java.time.{Duration, Instant, ZoneOffset}
+import java.time.{Duration, Instant}
 import java.util.{Date, Properties}
 import scala.reflect.io.Directory
 
@@ -280,22 +281,17 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
 
     val baseTime = new Date(2024-1900, 4, 3, 9, 30, 0).toInstant
 
+
+    topic2.pipeInput("key1", 4, baseTime)
+
     inputTopic1.pipeInput("key1", ProductValue("", ""), baseTime)
+    inputTopic1.pipeInput(null, null, baseTime)
 
-    topic2.pipeInput("key1", 4, baseTime.plusSeconds(4))
-    inputTopic1.pipeInput("key1", ProductValue("", ""), baseTime.plusSeconds(5))
-
-    topic2.pipeInput("key1", 6, baseTime.plusSeconds(3600*24*2))
-
-    topic2.pipeInput("key1", 7, baseTime.plusSeconds(8)) // TODO: why not ignored ?
-    inputTopic1.pipeInput("key1", ProductValue("", ""), baseTime.plusSeconds(8))
-
-    // inputTopic1.pipeInput("key1", ProductValue("", ""), baseTime.plusSeconds(2))
 
     readOutputTopic(outputTopic)
   }
 
-  test("aggregate on window close") {
+  test("aggregate on window close with EmitStrategy") {
     val props = new Properties()
     props.setProperty(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kafka-streams/")
     props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
@@ -315,6 +311,27 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
 
     readOutputTopic(outputTopic)
   }
+
+  test("aggregate on window close with Suppressed") {
+    val props = new Properties()
+    props.setProperty(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kafka-streams/")
+    props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(aggWithSuppressedTopology, props)
+    val inputTopic = testDriver.createInputTopic("input-topic", new StringSerializer, new IntegerSerializer)
+    val outputTopic = testDriver.createOutputTopic("output-topic", new StringDeserializer, new LongDeserializer)
+
+    val baseTime = new Date(2024 - 1900, 4, 3, 9, 30, 0).toInstant
+
+    inputTopic.pipeInput("key1", 1, baseTime.minusNanos(1))
+    inputTopic.pipeInput("key1", 2, baseTime.plusSeconds(2))
+    inputTopic.pipeInput("key1", 3, baseTime.plusSeconds(4))
+    inputTopic.pipeInput("key1", 1, baseTime.plusSeconds(10))
+    inputTopic.pipeInput("key1", 1, baseTime.plusSeconds(20))
+
+    readOutputTopic(outputTopic)
+  }
+
 
   private def windowTopology: Topology = {
     val builder = new StreamsBuilder
@@ -424,7 +441,7 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
       .table[String, ProductValue]("product", Consumed.`with`(Serdes.String(), new JsonSerde[ProductValue]))
 
     productTable
-      .outerJoin(
+      .leftJoin(
         builder.table[String, Integer]("merchant", Consumed.`with`(Serdes.String(), Serdes.Integer())),
         (_: ProductValue, merchantRank: Integer) => merchantRank
       )
@@ -481,7 +498,7 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
       .stream[String, ProductValue]("product", Consumed.`with`(Serdes.String(), new JsonSerde[ProductValue]))
 
     productStream
-      .join[Integer, Integer](
+      .leftJoin[Integer, Integer](
         builder.stream[String, Integer]("merchant", Consumed.`with`(Serdes.String(), Serdes.Integer())),
         valueJoiner,
         JoinWindows.ofTimeDifferenceWithNoGrace(Duration.ofSeconds(10)),
@@ -504,6 +521,25 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
       .windowedBy(TimeWindows.ofSizeWithNoGrace(windowSize).advanceBy(windowSize))
       .emitStrategy(EmitStrategy.onWindowClose())
       .count()
+      .toStream
+      .selectKey((key, _) => s"${key.window().start()}-${key.key()}")
+      .to("output-topic", Produced.`with`(Serdes.String(), Serdes.Long()))
+
+    streams.build()
+  }
+
+  private def aggWithSuppressedTopology: Topology = {
+    // TODO: can we use window suppress on KTables where the keys are not windows (normal keys) ? -> No
+    val streams = new StreamsBuilder
+
+    val windowSize = Duration.ofSeconds(10)
+
+    streams
+      .stream[String, Integer]("input-topic", Consumed.`with`(Serdes.String(), Serdes.Integer()))
+      .groupByKey()
+      .windowedBy(TimeWindows.ofSizeWithNoGrace(windowSize).advanceBy(windowSize))
+      .count()
+      .suppress(Suppressed.untilWindowCloses(BufferConfig.unbounded()))
       .toStream
       .selectKey((key, _) => s"${key.window().start()}-${key.key()}")
       .to("output-topic", Produced.`with`(Serdes.String(), Serdes.Long()))
