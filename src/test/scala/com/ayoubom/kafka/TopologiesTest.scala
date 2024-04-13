@@ -279,7 +279,7 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
     val topic2 = testDriver.createInputTopic("merchant", new StringSerializer, new IntegerSerializer)
     val outputTopic = testDriver.createOutputTopic("output-join", new StringDeserializer, new IntegerDeserializer)
 
-    val baseTime = new Date(2024-1900, 4, 3, 9, 30, 0).toInstant
+    val baseTime = new Date(2024 - 1900, 4, 3, 9, 30, 0).toInstant
 
 
     topic2.pipeInput("key1", 4, baseTime)
@@ -316,6 +316,7 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
     val props = new Properties()
     props.setProperty(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kafka-streams/")
     props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
+    props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
 
     val testDriver: TopologyTestDriver = new TopologyTestDriver(aggWithSuppressedTopology, props)
     val inputTopic = testDriver.createInputTopic("input-topic", new StringSerializer, new IntegerSerializer)
@@ -329,6 +330,27 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
     inputTopic.pipeInput("key1", 1, baseTime.plusSeconds(10))
     inputTopic.pipeInput("key1", 1, baseTime.plusSeconds(20))
 
+    readOutputTopic(outputTopic)
+  }
+
+  test("topology with repartitioning") {
+    val props = new Properties()
+    props.setProperty(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kafka-streams/")
+    props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
+    props.setProperty(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass().getName())
+    props.setProperty(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass().getName())
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(topologyWithRepartitioning, props)
+    val inputTopic = testDriver.createInputTopic("input-topic", new StringSerializer, new StringSerializer)
+    val outputTopic = testDriver.createOutputTopic("output-topic", new StringDeserializer, new LongDeserializer)
+
+    val baseTime = new Date(2024 - 1900, 4, 3, 9, 30, 0).toInstant
+
+    inputTopic.pipeInput("key1", "new-key1", baseTime)
+    inputTopic.pipeInput("key2", "new-key2", baseTime.plusSeconds(2))
+    inputTopic.pipeInput("key3", "new-key1", baseTime.plusSeconds(2))
+
+    println(topologyWithRepartitioning.describe())
     readOutputTopic(outputTopic)
   }
 
@@ -543,6 +565,43 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
       .toStream
       .selectKey((key, _) => s"${key.window().start()}-${key.key()}")
       .to("output-topic", Produced.`with`(Serdes.String(), Serdes.Long()))
+
+    streams.build()
+  }
+
+  private def topologyWithRepartitioning: Topology = {
+    val streams = new StreamsBuilder
+
+    val windowSize = Duration.ofSeconds(10)
+
+    streams
+      .stream[String, String]("input-topic", Consumed.`with`(Serdes.String(), Serdes.String()))
+      .selectKey((_, value) => value) // causes repartitioning
+      .groupByKey()
+      .windowedBy(TimeWindows.ofSizeWithNoGrace(windowSize).advanceBy(windowSize))
+      .emitStrategy(EmitStrategy.onWindowClose())
+      .count()
+      .toStream
+      .selectKey((key, _) => s"${key.window().start()}-${key.key()}")
+      .to("output-topic", Produced.`with`(Serdes.String(), Serdes.Long()))
+
+    /* Note: From a compiled topology perspective the three processors
+
+        .groupByKey()
+        .windowedBy(TimeWindows.ofSizeWithNoGrace(windowSize).advanceBy(windowSize))
+        .emitStrategy(EmitStrategy.onWindowClose())
+
+      represent one AGGREGATE node, which is writing into and reading from the internal windowed store
+     */
+
+    /* Study of KAFKA-13842
+      - Adding a pre-aggregation step (analogous to combineByKey in Hadoop, beam, etc..) may cause loss of performance in most cases
+      instead of increasing it. A state store will be needed to hold the pre-aggregation results. Given X keys and N partitions, each task maintains
+      X.N rows in its store. In addition to the I/O cost increase, there is a cost in restoration of tasks as we will now have N additional changelog-topics
+      that should be restored at restart of the application, or a rebalance of a task.
+
+      - It may (...or not) increase performance when the windows are large enough which causes big number of records to be shuffled.
+     */
 
     streams.build()
   }
