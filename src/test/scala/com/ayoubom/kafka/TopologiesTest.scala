@@ -5,8 +5,9 @@ import org.apache.kafka.common.serialization._
 import org.apache.kafka.streams._
 import org.apache.kafka.streams.kstream.Suppressed.BufferConfig
 import org.apache.kafka.streams.kstream._
-import org.apache.kafka.streams.state.WindowStore
-import org.apache.kafka.streams.state.internals.RocksDbWindowBytesStoreSupplier
+import org.apache.kafka.streams.processor.api.{Processor, ProcessorContext, ProcessorSupplier, Record}
+import org.apache.kafka.streams.state.{KeyValueStore, Stores, TimestampedKeyValueStore, ValueAndTimestamp, WindowStore}
+import org.apache.kafka.streams.state.internals.{RocksDBKeyValueBytesStoreSupplier, RocksDbWindowBytesStoreSupplier, TimestampedKeyValueStoreBuilder}
 import org.apache.kafka.streams.test.TestRecord
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
@@ -604,6 +605,86 @@ class TopologiesTest extends AnyFunSuite with BeforeAndAfterEach {
      */
 
     streams.build()
+  }
+
+  test("global store with processor") {
+    val props = new Properties()
+    props.setProperty(StreamsConfig.STATE_DIR_CONFIG, "/tmp/kafka-streams/")
+    props.setProperty(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-app")
+
+    val testDriver: TopologyTestDriver = new TopologyTestDriver(topologyWithGlobalStore, props)
+    val globalTopic = testDriver.createInputTopic("global-input", new StringSerializer, new StringSerializer)
+    val inputTopic = testDriver.createInputTopic("input", new StringSerializer, new StringSerializer)
+    val outputTopic = testDriver.createOutputTopic("output", new StringDeserializer, new StringDeserializer)
+
+    globalTopic.pipeInput("key1", "global-value")
+    inputTopic.pipeInput("key1", "value1")
+
+    readOutputTopic(outputTopic)
+  }
+
+  private def topologyWithGlobalStore: Topology = {
+    val streams = new StreamsBuilder
+
+    val storeBuilder = Stores.timestampedKeyValueStoreBuilder(
+      Stores.persistentTimestampedKeyValueStore("my-global-store"),
+      Serdes.String(),
+      Serdes.String()
+    )
+
+    class MyProcessor extends Processor[String, String, Void, Void] {
+
+      var store: TimestampedKeyValueStore[String, String] = null
+
+      override def init(context: ProcessorContext[Void, Void]): Unit = {
+        store = context.getStateStore("my-global-store")
+      }
+
+      override def process(record: Record[String, String]) = {
+        store.put(record.key(), ValueAndTimestamp.make(s"new-${record.value()}", Instant.now().toEpochMilli))
+      }
+    }
+
+    class MySupplier extends ProcessorSupplier[String, String, Void, Void]() {
+      override def get(): Processor[String, String, Void, Void] = {
+        new MyProcessor()
+      }
+    }
+
+    class MyInputProcessor extends Processor[String, String, String, String] {
+
+      var store: TimestampedKeyValueStore[String, String] = null
+      var context: ProcessorContext[String, String] = null
+
+      override def init(context: ProcessorContext[String, String]): Unit = {
+        store = context.getStateStore("my-global-store")
+        this.context = context
+      }
+
+      override def process(record: Record[String, String]): Unit = {
+        val value = store.get(record.key())
+        context.forward(new Record[String, String](record.key, record.value()+"|"+value.value(), Instant.now().toEpochMilli))
+      }
+    }
+
+    streams.addGlobalStore(
+      storeBuilder,
+      "global-input",
+      Consumed.`with`(Serdes.String(), Serdes.String()),
+      new MySupplier()
+    )
+
+    streams
+      .stream("input", Consumed.`with`(Serdes.String(), Serdes.String()))
+      .process(
+        new ProcessorSupplier[String, String, String, String]() {
+          override def get(): Processor[String, String, String, String] = {
+            new MyInputProcessor()
+          }
+        })
+      .to("output", Produced.`with`(Serdes.String(), Serdes.String()))
+
+    streams.build
   }
 
 
