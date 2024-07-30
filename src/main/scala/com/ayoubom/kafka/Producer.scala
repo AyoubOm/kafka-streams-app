@@ -22,21 +22,12 @@ object Producer extends App {
   val baseTime = new Date(2024 - 1900, 3, 15, 9, 30, 0)
     .toInstant
 
-  sendMessage("input", "key1", 4)
+//  sendMessage("input", "key1", 1000001)
 
- Thread.sleep(5000)
-
-  sendMessage("input", "key1", 12)
-
- Thread.sleep(3000)
-
-  sendMessage("input", "key1", 22)
+  sendMessage("left", "a", 690)
 
 
-
-
-//  sendMessage("input", "key1", 30)
-
+  producer.close()
 
   private def sendMessage(topic: String, key: String = "key1", value: Int): Unit = {
     val timestamp = baseTime.plusSeconds(value)
